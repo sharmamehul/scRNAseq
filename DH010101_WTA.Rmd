@@ -41,13 +41,6 @@ plot_grid(p1, p2)
 
 # Data normalization and subset for variable (highly dispersed) features
 comb <- merge(stim.s, unstim.s, add.cell.ids = c("stim", "unstim"))
-data.list <- SplitObject(comb, split.by = "stim")
-for (i in 1:length(pancreas.list)) {
-    pancreas.list[[i]] <- NormalizeData(pancreas.list[[i]], verbose = FALSE)
-    pancreas.list[[i]] <- FindVariableFeatures(pancreas.list[[i]], selection.method = "vst", 
-        nfeatures = 2000, verbose = FALSE)
-}
-
 data.list <- lapply(data.list, function(x) {
     #x <- SCTransform(x, variable.features.n = 20000, return.only.var.genes = F, verbose = F) # Find variable features this time, for plotting purposes. For batch correction of the whole dataset, repeat from this step with lower variability threshold or full list of genesNormalizeData(pancreas.list[[i]], verbose = FALSE)
     # I cannot manage to keep all features with SCTransform. Try to go back to the standard pipeline
@@ -96,6 +89,8 @@ DimPlot(object = comb, reduction = "harmony", pt.size = .1, group.by = "stim")
 ```
 
 ## Cell Cluster Annotation
+
+This part I am still working on
 
 ```{r}
 # Identify cell type markers
