@@ -1,0 +1,112 @@
+---
+title: "DH010101_WTA"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(Seurat)
+library(ggplot2)
+library(cowplot)
+library(sctransform)
+library(harmony)
+```
+
+## Data Integration
+
+### Seurat for QC and dataset integration
+
+```{r}
+setwd("~/maggie.fu/Projects/Turvey/scRNAseq/")
+
+stim <- read.csv("stim_RSEC_MolsPerCell_WTA.csv", skip = 7, row.names = 1)
+unstim <- read.csv("unstim_RSEC_MolsPerCell_WTA.csv", skip = 7, row.names = 1)
+
+stim.s <- CreateSeuratObject(t(stim))
+unstim.s <- CreateSeuratObject(t(unstim))
+
+stim.s$stim <- "stim"
+unstim.s$stim <- "unstim"
+
+# Merge datasets, no batch correction
+comb <- merge(stim.s, unstim.s, add.cell.ids = c("stim", "unstim"))
+comb <- FindVariableFeatures(comb)
+comb <- ScaleData(comb)
+comb <- RunPCA(comb, npcs = 30)
+comb <- RunUMAP(comb, reduction = "pca", dims = 1:20)
+comb <- FindNeighbors(comb, reduction = "pca", dims = 1:20)
+comb <- FindClusters(comb, resolution = 0.5)
+p1 <- DimPlot(comb, group.by = "stim")
+p2 <- DimPlot(comb, label = T)
+plot_grid(p1, p2)
+
+# Data normalization and subset for variable (highly dispersed) features
+comb <- merge(stim.s, unstim.s, add.cell.ids = c("stim", "unstim"))
+data.list <- SplitObject(comb, split.by = "stim")
+for (i in 1:length(pancreas.list)) {
+    pancreas.list[[i]] <- NormalizeData(pancreas.list[[i]], verbose = FALSE)
+    pancreas.list[[i]] <- FindVariableFeatures(pancreas.list[[i]], selection.method = "vst", 
+        nfeatures = 2000, verbose = FALSE)
+}
+
+data.list <- lapply(data.list, function(x) {
+    #x <- SCTransform(x, variable.features.n = 20000, return.only.var.genes = F, verbose = F) # Find variable features this time, for plotting purposes. For batch correction of the whole dataset, repeat from this step with lower variability threshold or full list of genesNormalizeData(pancreas.list[[i]], verbose = FALSE)
+    # I cannot manage to keep all features with SCTransform. Try to go back to the standard pipeline
+    NormalizeData(x, verbose = F)
+    FindVariableFeatures(x, selection.method = "vst", nfeatures = 2000, verbose = F)
+})
+
+# Find anchors
+#data.features <- SelectIntegrationFeatures(data.list)
+#data.list <- PrepSCTIntegration(data.list, anchor.features = data.features)
+anchors <- FindIntegrationAnchors(object.list = data.list)
+                                  #anchor.features = data.features,
+                                  #normalization.method = "SCT")
+genes <- intersect(rownames(data.list[[1]]), rownames(data.list[[2]]))
+
+# Integrate not just the anchor but all genes
+data <- IntegrateData(anchors, features.to.integrate = genes)
+
+# Integrated Analysis
+DefaultAssay(data) <- "integrated"
+data <- ScaleData(data)
+data <- RunPCA(data, npcs = 30)
+data <- RunUMAP(data, reduction = "pca", dims = 1:20)
+data <- FindNeighbors(data, reduction = "pca", dims = 1:20)
+data <- FindClusters(data, resolution = 0.5)
+
+p1 <- DimPlot(data, group.by = "stim")
+p2 <- DimPlot(data, label = T)
+plot_grid(p1, p2)
+DimPlot(data, split.by = "stim")
+```
+
+### Instead of Seurat SCTransform, attempt Harmony
+```{r}
+comb <- merge(stim.s, unstim.s, add.cell.ids = c("stim", "unstim")) %>%
+    Seurat::NormalizeData() %>%
+    FindVariableFeatures(selection.method = "vst", nfeatures = 2000) %>% 
+    ScaleData() %>% 
+    RunPCA(pc.genes = pbmc@var.genes, npcs = 20) %>% 
+    RunHarmony("stim", plot_convergence = TRUE)
+harmony_embeddings <- Embeddings(comb, 'harmony')
+harmony_embeddings[1:5, 1:5]
+options(repr.plot.height = 5, repr.plot.width = 12)
+DimPlot(object = comb, reduction = "harmony", pt.size = .1, group.by = "stim")
+# Worked very poorly - Go back to Seurat
+```
+
+## Cell Cluster Annotation
+
+```{r}
+# Identify cell type markers
+DefaultAssay(data) <- "RNA"
+nk.markers <- FindConservedMarkers(data, ident.1 = 7, grouping.var = "stim", verbose = FALSE)
+head(nk.markers)
+
+FeaturePlot(data, features = c("CD3D", "SELL", "CREM", "CD8A", "GNLY", "CD79A", "FCGR3A", "CCL2", "PPBP"), min.cutoff = "q9")
+data <- RenameIdents(data, `0` = "CD14 Mono", `1` = "CD4 Naive T", `2` = "CD4 Memory T", `3` = "CD16 Mono", `4` = "B", `5` = "CD8 T", `6` = "T activated", `7` = "NK", `8` = "DC", `9` = "B Activated", 
+    `10` = "Mk", `11` = "pDC", `12` = "Eryth", `13` = "Mono/Mk Doublets")
+
+DimPlot(data, label = TRUE)
+```
+
