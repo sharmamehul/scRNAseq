@@ -73,6 +73,35 @@ plot_grid(p1, p2)
 DimPlot(data, split.by = "stim")
 ```
 
+# Get Assay data and annotate using bpe in SingleR (hpca isn't that great)
+counts <- GetAssayData(data)
+
+singler <- CreateSinglerObject(counts=counts,
+  project.name="excelerate course", # choose
+  min.genes = 200, # ignore cells with fewer than 200 transcripts
+  technology = "CEL-Seq2", # choose
+  species = "Human",
+  citation = "Schelker et al. 2017", # choose
+  ref.list = list(hpca=hpca, bpe=blueprint_encode),
+  normalize.gene.length = FALSE,        # needed for full-length platforms (e.g. smartseq)
+  variable.genes = "de",  # see vignette
+  fine.tune = FALSE, # TRUE would take very long
+  reduce.file.size = TRUE, # leave out less-often used fields 
+  do.signatures = FALSE,
+  do.main.types = TRUE,
+  numCores = SingleR.numCores)
+
+for (ref.set in names(singler$singler) ) {
+  types <- singler$singler[[ref.set]]$SingleR.single.main$labels[,1]
+  data <- AddMetaData(data,
+                         metadata=types,
+                         col.name=paste0(ref.set,"_type" ) )
+}
+
+p1 <- DimPlot(data, group.by = "bpe_type", split.by = "stim", label = T)
+plot_grid(p1)
+
+
 ### Instead of Seurat SCTransform, attempt Harmony
 ```{r}
 comb <- merge(stim.s, unstim.s, add.cell.ids = c("stim", "unstim")) %>%
